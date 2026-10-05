@@ -63,7 +63,10 @@ const requiredConfig = {
 };
 
 
-for (const [name, value] of Object.entries(requiredConfig)) {
+for (
+  const [name, value]
+  of Object.entries(requiredConfig)
+) {
   if (!value) {
     throw new Error(
       `Missing required environment variable: ${name}`
@@ -75,7 +78,6 @@ for (const [name, value] of Object.entries(requiredConfig)) {
 const facilitatorClient =
   createCdpFacilitatorClient();
 
-
 const resourceServer =
   new x402ResourceServer(
     facilitatorClient
@@ -86,7 +88,6 @@ resourceServer.register(
   NETWORK,
   new ExactEvmScheme()
 );
-
 
 await resourceServer.initialize();
 
@@ -144,6 +145,51 @@ const app = express();
 app.use(express.json());
 
 
+function logEvent(
+  event,
+  details = {}
+) {
+  console.log(
+    JSON.stringify({
+      timestamp:
+        new Date().toISOString(),
+      event,
+      ...details
+    })
+  );
+}
+
+
+function getMcpRequestInfo(body) {
+  if (!body || typeof body !== "object") {
+    return {
+      method: "unknown",
+      tool: null
+    };
+  }
+
+  const method =
+    typeof body.method === "string"
+      ? body.method
+      : "unknown";
+
+  let tool = null;
+
+  if (
+    method === "tools/call" &&
+    body.params &&
+    typeof body.params.name === "string"
+  ) {
+    tool = body.params.name;
+  }
+
+  return {
+    method,
+    tool
+  };
+}
+
+
 function createServer() {
 
   const server =
@@ -169,17 +215,76 @@ function createServer() {
     paidSingle(
       async ({ barcode }) => {
 
-        const result =
-          analyzeBarcode(barcode);
+        const startedAt =
+          performance.now();
 
-        return {
-          content: [
+        logEvent(
+          "paid_tool_execution_started",
+          {
+            tool:
+              "analyze_barcode"
+          }
+        );
+
+        try {
+
+          const result =
+            analyzeBarcode(barcode);
+
+          const durationMs =
+            Number(
+              (
+                performance.now() -
+                startedAt
+              ).toFixed(2)
+            );
+
+          logEvent(
+            "paid_tool_execution_completed",
             {
-              type: "text",
-              text: JSON.stringify(result)
+              tool:
+                "analyze_barcode",
+              success: true,
+              durationMs
             }
-          ]
-        };
+          );
+
+          return {
+            content: [
+              {
+                type: "text",
+                text:
+                  JSON.stringify(result)
+              }
+            ]
+          };
+
+        } catch (error) {
+
+          const durationMs =
+            Number(
+              (
+                performance.now() -
+                startedAt
+              ).toFixed(2)
+            );
+
+          logEvent(
+            "paid_tool_execution_failed",
+            {
+              tool:
+                "analyze_barcode",
+              success: false,
+              durationMs,
+              error:
+                error instanceof Error
+                  ? error.name
+                  : "UnknownError"
+            }
+          );
+
+          throw error;
+        }
       }
     )
   );
@@ -247,6 +352,7 @@ function createServer() {
             )
             .min(1)
             .optional()
+
         })
         .optional()
         .describe(
@@ -291,26 +397,91 @@ function createServer() {
         chunkSize
       }) => {
 
-        const result =
-          analyzeBarcodeBatch(
-            barcodes,
-            mode ?? "full",
+        const startedAt =
+          performance.now();
+
+        logEvent(
+          "paid_tool_execution_started",
+          {
+            tool:
+              "analyze_barcode_batch",
+            batchItemCount:
+              barcodes.length
+          }
+        );
+
+        try {
+
+          const result =
+            analyzeBarcodeBatch(
+              barcodes,
+              mode ?? "full",
+              {
+                filter,
+                maxResults,
+                deduplicate,
+                chunkSize
+              }
+            );
+
+          const durationMs =
+            Number(
+              (
+                performance.now() -
+                startedAt
+              ).toFixed(2)
+            );
+
+          logEvent(
+            "paid_tool_execution_completed",
             {
-              filter,
-              maxResults,
-              deduplicate,
-              chunkSize
+              tool:
+                "analyze_barcode_batch",
+              success: true,
+              batchItemCount:
+                barcodes.length,
+              durationMs
             }
           );
 
-        return {
-          content: [
+          return {
+            content: [
+              {
+                type: "text",
+                text:
+                  JSON.stringify(result)
+              }
+            ]
+          };
+
+        } catch (error) {
+
+          const durationMs =
+            Number(
+              (
+                performance.now() -
+                startedAt
+              ).toFixed(2)
+            );
+
+          logEvent(
+            "paid_tool_execution_failed",
             {
-              type: "text",
-              text: JSON.stringify(result)
+              tool:
+                "analyze_barcode_batch",
+              success: false,
+              batchItemCount:
+                barcodes.length,
+              durationMs,
+              error:
+                error instanceof Error
+                  ? error.name
+                  : "UnknownError"
             }
-          ]
-        };
+          );
+
+          throw error;
+        }
       }
     )
   );
@@ -324,6 +495,30 @@ app.post(
   "/mcp",
   async (req, res) => {
 
+    const requestStartedAt =
+      performance.now();
+
+    const {
+      method,
+      tool
+    } = getMcpRequestInfo(
+      req.body
+    );
+
+    logEvent(
+      "mcp_request_received",
+      {
+        httpMethod:
+          req.method,
+        path:
+          req.path,
+        mcpMethod:
+          method,
+        tool
+      }
+    );
+
+
     const server =
       createServer();
 
@@ -332,6 +527,38 @@ app.post(
         sessionIdGenerator: undefined
       });
 
+
+    res.on(
+      "finish",
+      () => {
+
+        const durationMs =
+          Number(
+            (
+              performance.now() -
+              requestStartedAt
+            ).toFixed(2)
+          );
+
+        logEvent(
+          "mcp_request_completed",
+          {
+            httpMethod:
+              req.method,
+            path:
+              req.path,
+            mcpMethod:
+              method,
+            tool,
+            statusCode:
+              res.statusCode,
+            durationMs
+          }
+        );
+      }
+    );
+
+
     res.on(
       "close",
       () => {
@@ -339,6 +566,7 @@ app.post(
         server.close();
       }
     );
+
 
     try {
 
@@ -357,6 +585,23 @@ app.post(
       console.error(
         "MCP request failed:",
         error
+      );
+
+      logEvent(
+        "mcp_request_failed",
+        {
+          httpMethod:
+            req.method,
+          path:
+            req.path,
+          mcpMethod:
+            method,
+          tool,
+          error:
+            error instanceof Error
+              ? error.name
+              : "UnknownError"
+        }
       );
 
       if (!res.headersSent) {
@@ -380,6 +625,16 @@ app.get(
   "/health",
   (req, res) => {
 
+    logEvent(
+      "health_request",
+      {
+        httpMethod:
+          req.method,
+        path:
+          req.path
+      }
+    );
+
     res.json({
       status: "ok",
       service:
@@ -401,6 +656,16 @@ app.get(
   "/mcp",
   (req, res) => {
 
+    logEvent(
+      "unsupported_mcp_request",
+      {
+        httpMethod:
+          req.method,
+        path:
+          req.path
+      }
+    );
+
     res.status(405).json({
       error:
         "Method not allowed. Use POST /mcp."
@@ -412,6 +677,16 @@ app.get(
 app.delete(
   "/mcp",
   (req, res) => {
+
+    logEvent(
+      "unsupported_mcp_request",
+      {
+        httpMethod:
+          req.method,
+        path:
+          req.path
+      }
+    );
 
     res.status(405).json({
       error:
@@ -443,6 +718,14 @@ app.listen(
 
     console.log(
       `analyze_barcode_batch: ${BATCH_PRICE}`
+    );
+
+    logEvent(
+      "server_started",
+      {
+        port: PORT,
+        network: NETWORK
+      }
     );
   }
 );

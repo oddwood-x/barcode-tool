@@ -1,0 +1,17 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.oddwood-x/barcode-tool",
+  "title": "ODDWOOD Barcode Tool",
+  "description": "Paid MCP server for EAN, UPC, and GTIN validation, normalization, correction, and batch analysis.",
+  "repository": {
+    "url": "https://github.com/oddwood-x/barcode-tool",
+    "source": "github"
+  },
+  "version": "1.0.0",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://barcode-tool.fly.dev/mcp"
+    }
+  ]
+}
