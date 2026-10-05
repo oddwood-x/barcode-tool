@@ -16,12 +16,12 @@ import {
 } from "@x402/mcp";
 
 import {
-  HTTPFacilitatorClient
-} from "@x402/core/server";
-
-import {
   ExactEvmScheme
 } from "@x402/evm/exact/server";
+
+import {
+  createCdpFacilitatorClient
+} from "@coinbase/cdp-sdk/x402";
 
 import {
   analyzeBarcode,
@@ -46,8 +46,11 @@ const SINGLE_PRICE =
 const BATCH_PRICE =
   process.env.X402_BATCH_PRICE;
 
-const FACILITATOR_URL =
-  process.env.X402_FACILITATOR_URL;
+const CDP_API_KEY_ID =
+  process.env.CDP_API_KEY_ID;
+
+const CDP_API_KEY_SECRET =
+  process.env.CDP_API_KEY_SECRET;
 
 
 const requiredConfig = {
@@ -55,7 +58,8 @@ const requiredConfig = {
   X402_PAY_TO: PAY_TO,
   X402_SINGLE_PRICE: SINGLE_PRICE,
   X402_BATCH_PRICE: BATCH_PRICE,
-  X402_FACILITATOR_URL: FACILITATOR_URL
+  CDP_API_KEY_ID,
+  CDP_API_KEY_SECRET
 };
 
 
@@ -69,9 +73,7 @@ for (const [name, value] of Object.entries(requiredConfig)) {
 
 
 const facilitatorClient =
-  new HTTPFacilitatorClient({
-    url: FACILITATOR_URL
-  });
+  createCdpFacilitatorClient();
 
 
 const resourceServer =
